@@ -31,4 +31,24 @@ data.MER <- read.delim("Genie_OU_IM_Global_Daily_e051c461-1abe-4fc5-b377-61a4930
 data.er.mer<-left_join(data.ER,data.MER, by(c="mech_code","Fiscal_Year","Operating Unit"))
 data.er.mer<-%>%select(-(OperatingUnit,FundingAgency.y:mech_code.y,Fiscal_Year.y)
 
+                       
+#changing the names of each column heading for ERSD.
+df_er <- data.ER%>%
+  dplyr::select( - c("prime_partner_duns","subrecipient_name","subrecipient_duns","award_number")) %>% 
+  dplyr::rename("Operating Unit"= "ï..operatingunit",
+                "Funding Agency"= "fundingagency",
+                "Partner Name"= "prime_partner_name",
+                "Mechanism ID"="mech_code",
+                "Mechansim Name" = "mech_name",
+                "Program Area"="program",
+                "Sub Program Area"="sub_program",
+                "Service Delivery"="interaction_type",
+                "Beneficiary"="beneficiary",
+                "Sub Beneficiary"="sub_beneficiary",
+                "Cost Category"="cost_category",
+                "Sub Cost Category"="sub_cost_category",
+                "Data Stream"="dataset",
+                "Fiscal Year"="fiscal_year",
+                "Amount"="value",
+                "Funding Type"="funding_type") 
 
