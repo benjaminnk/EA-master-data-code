@@ -18,25 +18,19 @@ library(stringr)
 library(tidyverse)
 library(dplyr)
 ``
+read
+
 #Step 2: Identify the file type you are importing. If it is a .txt, use the code below. If it is a .csv, use read.csv. The filepath should be within your working directory that you set above. Below the file is a .txt
-data.MER <- read.delim("C:/Users/STAR/Desktop/R code directory/Master Data Set/MER_Structured_Datasets_OU_IM_FY18-20_20200605_v1_1.txt", header = TRUE, sep = "\t", dec = ".")
-data.ER <- read.delim("C:/Users/STAR/Desktop/R code directory/Master Data Set/ER_Structured_Dataset.txt", header = TRUE, sep = "\t", dec = ".")
+data.MER <- read.delim("C:/Users/STAR/Desktop/R code directory/Master Data Set/MER_Structured_Datasets_OU_IM_FY18-20_20200605_v1_1.txt", header = TRUE, sep = "\t",quote = "", dec = ".")
+data.ER <- read.delim("C:/Users/STAR/Desktop/R code directory/Master Data Set/ER_Structured_Dataset.txt", header = TRUE, sep = "\t", quote = "", dec = ".")
 ``
-#You can also filter the MER dataframe for specific indicators and countries. Here for example-we are looking at PREP in Rwanda
 
-#join the data set to ER
-data.er.mer<-left_join(data.ER,data.MER, by(c="mech_code","Fiscal_Year","Operating Unit"))
-data.er.mer<-%>% select(-(OperatingUnit, FundingAgency.y:mech_code.y, Fiscal_Year.y))
-
-
-#join data set*
-data.er.mer <- data.ER %>% left_join(data.MER, by="mech_code")
 
 ##Step 3: Clean up/filter each data frame
 #changing the names of each column heading for ERSD &MSD.
 df_er <- data.ER%>%
   dplyr::select( - c("prime_partner_duns","subrecipient_name","subrecipient_duns","award_number")) %>% 
-  dplyr::rename("Operating Unit"= "?..operatingunit",
+  dplyr::rename("Operating Unit"= "ï..operatingunit",
                 "Funding Agency"= "fundingagency",
                 "Partner Name"= "prime_partner_name",
                 "Mechanism ID"="mech_code",
@@ -51,7 +45,10 @@ df_er <- data.ER%>%
                 "Data Stream"="dataset",
                 "Fiscal Year"="fiscal_year",
                 "Amount"="value",
-                "Funding Type"="funding_type") 
+                "Funding Type"="funding_type")%>%
+  dplyr::mutate('Data Stream'=as.character('Data Stream'))
+  
+  
 #MER Read in/
 #Switch the type of character of one of the variables in order oto be able to bind them. in this
 #case "Mechanism ID"for ER did no match the MER. Character to Integer
@@ -76,13 +73,26 @@ df_mer <- data.MER %>%
                 "Quarter 4"="qtr4",
                 "Results"="cumulative",
                 "Fiscal Year"="fiscal_year") %>% 
-  dplyr::mutate(`Mechanism ID` = as.integer(`Mechanism ID`)) %>% 
-  dplyr::mutate(`Data Stream` = "MER")
+  dplyr::mutate(`Data Stream` = "MER") %>% 
+  dplyr::mutate(`Mechanism ID` = as.integer(`Mechanism ID`),
+                'Data Stream'=as.character('Data Stream'))
+  
 
 ## Step 4: now bind them together
 df <- dplyr::bind_rows(df_er, df_mer)
 
 ##Step 5: write file to output folder
-write_csv(df, "C:/Users/STAR/Desktop/R code directory/MER_Structured_Datasets.csv")
+write_csv(data.ER, "C:/Users/STAR/Desktop/R code directory/Er_Structured_Datasets.csv")
 
+
+##ADDITIONAL CODING FOR PRACTICE, DO NOT RUN CODE.##
+#You can also filter the MER dataframe for specific indicators and countries. Here for example-we are looking at PREP in Rwanda
+
+#join the data set to ER
+data.er.mer<-left_join(data.ER,data.MER, by(c="mech_code","Fiscal_Year","Operating Unit"))
+data.er.mer<-%>% select(-(OperatingUnit, FundingAgency.y:mech_code.y, Fiscal_Year.y))
+
+
+#join data set*
+data.er.mer <- data.ER %>% left_join(data.MER, by="mech_code")
 
