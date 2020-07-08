@@ -1,0 +1,110 @@
+---
+title: "Merging Standard COP Matrix and Initiative File"
+author: "EA Team"
+date: "7/8/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This code is a bit different from the others. The first step is to run the function, followed by importing the data, running the code, and then exporting it to your desired location. This script relies on the FASTs so you must download them first. Be sure to set your working directtor first to wherever the FASTS are stored. 
+
+
+```{r}
+nasty_munge <- function(filepath) {
+
+  df <- readxl::read_xlsx(filepath,
+                          sheet = "3 Initiative-E",
+                          skip = 1,
+                          col_types = "text") %>%
+    dplyr::slice(-1,-2) %>%
+    dplyr::select_at(dplyr::vars(!dplyr::starts_with("Skip"))) %>%
+    dplyr::select(-TotalInitiativeAmount, -InterventionTotalAmount)
+
+  ou <- readxl::read_excel(filepath,
+                           sheet = "Mechs List-R",
+                           range = "A2") %>%
+    names()
+
+# initiative 1
+  df1 <- df %>%
+    dplyr::select(FundingAgency:InitiativeAmount1) %>%
+    dplyr::filter(!is.na(InitiativeAmount1)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 2
+  df2 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName2", "FundingType2", "FundingCategory2",
+                  "AppropriationYear2", "FundingAccount2", "InitiativeAmount2") %>%
+    dplyr::filter(!is.na(InitiativeAmount2)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 3
+  df3 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName3", "FundingType3", "FundingCategory3",
+                  "AppropriationYear3", "FundingAccount3", "InitiativeAmount3") %>%
+    dplyr::filter(!is.na(InitiativeAmount3)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  final <- bind_rows(df1, df2, df3) %>%
+    dplyr::mutate(InitiativeAmount = as.numeric(InitiativeAmount)) %>%
+    dplyr::filter(InitiativeAmount!=0) %>%
+    dplyr::mutate(operatingunit = ou)
+
+  return(final)
+
+}
+
+```
+The below section is for quality check purposes. You can check that all the countries with initiative funds were included
+```{r}
+##test
+file <- list.files("your file path here", full.names = TRUE)
+library(tidyverse)
+test <- purrr::map_dfr(.x = file,
+                     .f = ~ nasty_munge(.x))
+```
+
+Read in standard cop matrix 
+#Key action items for editing: rename variables within the columns
+```{r}
+library(tidyverse)
+library(readxl)
+SCM <- readxl::read_excel("Standard COP Matrix (1).xlsx")
+SCM<-SCM%>%mutate(`Mechanism ID`=as.character(`Mechanism ID`))
+SCM<-SCM%>%
+  dplyr::mutate(`Data Stream` = "Standard COP Matrix")%>%
+  
+```
+
+Read in initiative fileand clean it up to be able to bind to the SCM. This includes renaming and mutating
+```{r}
+initiative<-read_csv("initiative_fast_06_01_20 (1).csv")
+initiative<-initiative%>% mutate(`Mechanism ID`=as.character(`Mechanism ID`))
+initiative <- initiative %>%
+  dplyr::rename(`Operating Unit` = operatingunit,
+                `Funding Agency` = FundingAgency,
+                `Partner Name` = PrimePartner,
+                `Mechanism Name` = MechanismName,
+               `Appropriation Year`=AppropriationYear,
+               `Initiative`=InitiativeName)
+initiative<-initiative%>%dplyr::group_by(`Operating Unit`, `Funding Agency`, `Mechanism ID`, `Partner Name`, `Mechanism Name`, `Appropriation Year`) %>%
+    dplyr::mutate(`Data Stream` = "initiative")
+
+```
+#Bind the rows, use the gather and mutate_at function to remove duplicated funding amounts
+```{r}
+new_data<-bind_rows(initiative,SCM)
+new_data<-new_data%>%
+  gather(`Budget Code`,`Funding Amount`,`CIRC`:`Water`,na.rm=TRUE)%>%
+  mutate_at(vars(`GHP-State`:`Total Planned Funding`), funs(replace(., duplicated (. ), NA)))
+```
+
+```{r}
+readr::write_csv(new_data,"new SCM.csv")
+
+distinct(SCM, operatingunit) %>% print(n=Inf)
+```
