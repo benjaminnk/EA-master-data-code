@@ -1,0 +1,242 @@
+---
+title: "Matching MER to ER"
+author: "EA Team"
+date: "8/11/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+---
+
+
+  
+##Here are instructions for importing and working with MER data. I set my working directory above to the location where I have downloaded the MER file**
+  
+  
+#Step 1: Install the following packages. If they are already installed, please use the library function instead
+```{r}
+install.packages("stringr")
+install.packages("devtools")
+install.packages("tydiverse")
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(here)
+library(ICPIutilities)
+library(glamr)
+library(here)
+glamr::folder_setup(folder_list = list("data"))
+```
+read
+
+#Step 2: Identify the file type you are importing. If it is a .txt, use the code below. If it is a .csv, use read.csv. The filepath should be within your working directory that you set above. Below the file is a .txt
+ (BK notes-8/11/20: Use Here package to call data)
+```{r}
+
+#priject setup
+ dir_data <- "./Data"
+    dir_dataout <- "./Dataout"
+
+
+    si_setup <- function(){
+  folder_setup()
+  setup_gitignore()
+  setup_readme()
+}
+ 
+    #sep R script for a certain way to    
+
+datasets<-here("data")
+#project folder structure 
+#rename the below to our datasets
+er_files<-list.files(datasets,pattern="ER_Structured_Dataset_FY18-20") #have one with OU and one without
+mer_files<-list.files(datasets,pattern="MER_Structured_Datasets_OU")
+#here("data","MER_Structured_Datasets_OU_IM_FY18-20_20200626_v2_1.txt")
+#path <- here("data","MER_Structured_Datasets_OU_IM_FY18-20_20200626_v2_1.txt")
+#read in the sds
+df_mer<-read_msd(here( "data",mer_files),save_rds=FALSE, remove_txt = FALSE)
+df_er<-read_msd(here( "data",er_files),save_rds=FALSE, remove_txt = FALSE) #does this work with ER
+
+
+data.MER <- read.delim("MER_Structured_Datasets_OU_IM_FY18-20_20200626_v2_1.txt", header = TRUE, sep = "\t",quote = "", dec = ".")
+data.ER <- read.delim("ER_Structured_Dataset_FY18-20_20201220_v2_5.txt", header = TRUE, sep = "\t", quote = "", dec = ".")
+```
+
+
+##Step 3: Clean up/filter each data frame
+#changing the names of each column heading for ERSD &MSD.
+```{r}
+df_er <- df_mer%>%
+  dplyr::select( - c("prime_partner_duns","subrecipient_name","subrecipient_duns","award_number")) %>% 
+  dplyr::rename("Operating Unit"= "ï..operatingunit",
+                "Funding Agency"= "fundingagency",
+                "Partner Name"= "prime_partner_name",
+                "Mechanism ID"="mech_code",
+                "Mechansim Name" = "mech_name",
+                "Program Area"="program",
+                "Sub Program Area"="sub_program",
+                "Service Delivery"="interaction_type",
+                "Beneficiary"="beneficiary",
+                "Sub Beneficiary"="sub_beneficiary",
+                "Cost Category"="cost_category",
+                "Sub Cost Category"="sub_cost_category",
+                "Data Stream"="dataset",
+                "Fiscal Year"="fiscal_year",
+                "Amount"="value",
+                "Funding Type"="funding_type")%>%
+#  dplyr::mutate(`Data Stream` = `Expenditure`)%>%
+ # dplyr::mutate('Data Stream'=as.character('Data Stream'))%>%
+ dplyr::mutate(`Mechanism ID` = as.character(`Mechanism ID`))
+```
+  
+#MER Read in/
+#Switch the type of character of one of the variables in order oto be able to bind them. in this
+#case "Mechanism ID"for ER did no match the MER. Character to Integer
+```{r}
+df_mer <- data.MER %>% 
+  dplyr::filter(disaggregate == "Total Numerator") %>%
+  dplyr::select( - c('operatingunituid', 'pre_rgnlztn_hq_mech_code', 'prime_partner_duns',	'award_number',	
+                    'categoryoptioncomboname', 'ageasentered', 'trendsfine', 'trendssemifine', 'trendscoarse',	
+                    'sex', 'statushiv',	'statustb', 'statuscx', 'hiv_treatment_status', 'otherdisaggregate', 'otherdisaggregate_sub',	
+                    'modality', 'source_name','numeratordenom','disaggregate','standardizeddisaggregate')) %>% 
+  dplyr::rename("Operating Unit"= "operatingunit",
+                "Country"= "countryname",
+                "Funding Agency"= "fundingagency",
+                "Partner Name"= "primepartner",
+                "Mechanism ID"="mech_code",
+                "Mechansim Name" = "mech_name",
+                "Indicator Type"="indicatortype",
+                "Indicator"="indicator",
+                "Targets"="targets",
+                "Quarter 1"="qtr1",
+                "Quarter 2"="qtr2",
+                "Quarter 3"="qtr3",
+                "Quarter 4"="qtr4",
+                "Results"="cumulative",
+                "Fiscal Year"="fiscal_year") %>% 
+  dplyr::mutate(`Data Stream` = 'MER') %>% 
+ dplyr::mutate(`Mechanism ID` = as.character(`Mechanism ID`))
+```  
+#Mutate the MER quarters so that they are combined into a single column
+```{r}
+  df_mer<-df_mer%>%
+  gather(`Quarter`,`Total`,`Quarter 1`: `Results`,na.rm=FALSE)%>%
+  mutate_at(vars(`Targets`),funs(replace(., duplicated(. ),NA)))
+```
+## Step 4: now bind them together
+```{r}
+df <- dplyr::bind_rows(df_er, df_mer)
+write_csv(df, "df.data.er.mer.csv")
+```
+
+
+title: "Merging Standard COP Matrix and Initiative File"
+author: "EA Team"
+date: "7/8/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This code is a bit different from the others. The first step is to run the function, followed by importing the data, running the code, and then exporting it to your desired location. This script relies on the FASTs so you must download them first. Be sure to set your working directtor first to wherever the FASTS are stored. 
+
+
+```{r}
+nasty_munge <- function(filepath) {
+
+  df <- readxl::read_xlsx(filepath,
+                          sheet = "3 Initiative-E",
+                          skip = 1,
+                          col_types = "text") %>%
+    dplyr::slice(-1,-2) %>%
+    dplyr::select_at(dplyr::vars(!dplyr::starts_with("Skip"))) %>%
+    dplyr::select(-TotalInitiativeAmount, -InterventionTotalAmount)
+
+  ou <- readxl::read_excel(filepath,
+                           sheet = "Mechs List-R",
+                           range = "A2") %>%
+    names()
+
+# initiative 1
+  df1 <- df %>%
+    dplyr::select(FundingAgency:InitiativeAmount1) %>%
+    dplyr::filter(!is.na(InitiativeAmount1)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 2
+  df2 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName2", "FundingType2", "FundingCategory2",
+                  "AppropriationYear2", "FundingAccount2", "InitiativeAmount2") %>%
+    dplyr::filter(!is.na(InitiativeAmount2)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 3
+  df3 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName3", "FundingType3", "FundingCategory3",
+                  "AppropriationYear3", "FundingAccount3", "InitiativeAmount3") %>%
+    dplyr::filter(!is.na(InitiativeAmount3)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  final <- bind_rows(df1, df2, df3) %>%
+    dplyr::mutate(InitiativeAmount = as.numeric(InitiativeAmount)) %>%
+    dplyr::filter(InitiativeAmount!=0) %>%
+    dplyr::mutate(operatingunit = ou)
+
+  return(final)
+
+}
+
+```
+The below section is for quality check purposes. You can check that all the countries with initiative funds were included
+```{r}
+##test
+file <- list.files("your file path here", full.names = TRUE)
+library(tidyverse)
+test <- purrr::map_dfr(.x = file,
+                     .f = ~ nasty_munge(.x))
+```
+
+Read in standard cop matrix 
+#Key action items for editing: rename variables within the columns
+```{r}
+library(tidyverse)
+library(readxl)
+SCM <- readxl::read_excel("Standard COP Matrix (1).xlsx")
+SCM<-SCM%>%mutate(`Mechanism ID`=as.character(`Mechanism ID`))
+SCM<-SCM%>%
+  dplyr::mutate(`Data Stream` = "Standard COP Matrix")%>%
+  
+```
+
+Read in initiative fileand clean it up to be able to bind to the SCM. This includes renaming and mutating
+```{r}
+initiative<-read_csv("initiative_fast_06_01_20 (1).csv")
+initiative<-initiative%>% mutate(`Mechanism ID`=as.character(`Mechanism ID`))
+initiative <- initiative %>%
+  dplyr::rename(`Operating Unit` = operatingunit,
+                `Funding Agency` = FundingAgency,
+                `Partner Name` = PrimePartner,
+                `Mechanism Name` = MechanismName,
+               `Appropriation Year`=AppropriationYear,
+               `Initiative`=InitiativeName)
+initiative<-initiative%>%dplyr::group_by(`Operating Unit`, `Funding Agency`, `Mechanism ID`, `Partner Name`, `Mechanism Name`, `Appropriation Year`) %>%
+    dplyr::mutate(`Data Stream` = "initiative")
+
+```
+#Bind the rows, use the gather and mutate_at function to remove duplicated funding amounts
+```{r}
+new_data<-bind_rows(initiative,SCM)
+new_data<-new_data%>%
+  gather(`Budget Code`,`Funding Amount`,`CIRC`:`Water`,na.rm=TRUE)%>%
+  mutate_at(vars(`GHP-State`:`Total Planned Funding`), funs(replace(., duplicated (. ), NA)))
+```
+
+```{r}
+readr::write_csv(new_data,"new SCM.csv")
+
+distinct(SCM, operatingunit) %>% print(n=Inf)
+```
