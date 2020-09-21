@@ -1,0 +1,147 @@
+---
+title: "Datapack COP 20 Code to Combine and Give us an Output"
+author: "EA Team"
+date: "Last Updated:4/17/2020"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+**Instructions for recreating ER 'dashboard dataset' using COP20 Datapack and FAST tool for countries that aren't part of the regional programs.
+
+#Step 1: Install the required packages to your computer. This includes loading the SI tools from Github (be sure to set up a Github beforehand). You should only have to do this part in the initial set up. Once doing that, skip to the next section during recurring downloads. 
+```{r,results="Hide"}
+install.packages("devtools")
+install.packages("tidyverse")
+devtools::install_github("USAID-OHA-SI/tameDP")
+devtools::install_github("USAID-OHA-SI/fastR")
+```
+##Load required programs and set your computer's Working  Director to where the files are located on your computer. In this case, I set my working directory to my SIEI COP20 folder.
+```{r,results="Hide"}
+library("tidyverse")
+library(fastR)
+library(tameDP)
+library(purrr)
+setwd("~/Credence/on boarding/SIEI/COP20")
+```
+#Identify all the FAST files(Where they are located on your computer)
+```{r,results="Hide"}
+fasts <- list.files(path="FASTs", full.names = TRUE)
+```
+
+#Create lists of all datapacks
+```{r,results="Hide"}
+datapacks <- list.files("Data Pack", full.names = TRUE)
+```
+#step 3: filpath to the dashboard dataset (excel sheet). It best to move this to where your WD is
+```{r,results="Hide"}
+dataset <- "Budget.ER.MER Clean Post FY 19 1.18.20v2 (1).xlsx"
+```
+
+#Read in all FAST files and combine into one data frame. This pulls in the intervention tab
+```{r,results="Hide"}
+df_fasts <- map_dfr(.x = fasts,
+                  .f = ~ fastR::run_fastR_cop20(.x, "2 Intervention-E"))
+```
+#Data Cleaning. This includes renaming, and filtering out certain values
+```{r,results="Hide"}
+df_fasts <- df_fasts %>%
+  dplyr::rename(`Funding Agency` = fundingagency,
+                `Mechanism Name` = mechanismname,
+                `Partner Name` = primepartner,
+                `Partner Org Type` = orgtype,
+                `Mechanism ID` = mech_code,
+                `Mechanism Name` = mechanismname,
+                `Program Area` = program,
+                `Sub-Program Area` = programarea,
+                `Service Delivery` = servicedelivery,
+                `Sub-Beneficiary` = subbeneficiary,
+                Beneficiary = beneficiary,
+                `OU (COP 2019)` = ou,
+                Budget = amt) %>%
+  dplyr::filter(cop == "COP20",
+                amt_type == "Budget")
+
+df_fasts <- df_fasts %>%
+  dplyr::mutate(`Fiscal Year` = "FY 21",
+                `Data Stream` = "Budget.PA",
+                `Local Partner Type` = "Unknown",
+                Country = `OU (COP 2019)`,
+                `OU (Pre-COP 2019)` = `OU (COP 2019)`) %>%
+  dplyr::select(-cop, -amt_type)
+```
+
+#read in all of the datapacks and combine into one data frame
+```{r,results="Hide"}
+
+df_dp <- map_dfr(.x = datapacks,
+                   .f = ~ tameDP::tame_dp(.x))
+ 
+df_dp <- df_dp %>%
+  dplyr::filter(indicator %in% c("HTS_TST", "HTS_TST_POS", "TX_CURR", "TX_NEW", "VMMC_CIRC", "OVC_SERV", "PrEP_CURR", "PrEP_NEW"),
+                disaggregate != "KeyPop/Result") %>%
+  dplyr::group_by(operatingunit, fundingagency, mech_code, primepartner, mech_name, indicator, fiscal_year) %>%
+  dplyr::summarise(targets = sum(targets, na.rm = TRUE)) %>% 
+  dplyr::ungroup()
+
+df_dp <- df_dp %>%
+  dplyr::rename(`OU (COP 2019)` = operatingunit,
+                `Funding Agency` = fundingagency,
+                `Mechanism ID` = mech_code,
+                `Partner Name` = primepartner,
+                `Mechanism Name` = mech_name,
+                `Fiscal Year` = fiscal_year,
+                Indicator = indicator,
+                Target = targets) %>%
+  dplyr::mutate(`OU (Pre-COP 2019)` = `OU (COP 2019)`,
+                `Target Result` = "Target",
+                `Fiscal Year` = "FY 21",
+                `Data Stream` = "MER",
+                Country = `OU (COP 2019)`) %>%
+  dplyr::mutate(`Program Area` = dplyr::case_when(Indicator == "HTS_TST_POS" ~ "HTS",
+                                                  Indicator == "HTS_TST" ~ "HTS",
+                                                  Indicator == "TX_CURR" ~ "C&T",
+                                                  Indicator == "TX_NEW" ~ "C&T",
+                                                  Indicator == "PrEP_CURR" ~ "PREV",
+                                                  Indicator == "PrEP_NEW" ~ "PREV",
+                                                  Indicator == "VMMC" ~ "PREV"))
+
+```
+## read in and clean up dashboard dataset and creates the integrated data pack
+``````{r,results="Hide"}
+data <- readxl::read_excel(dataset) %>%
+  dplyr::mutate(`Mechanism ID` = as.character(`Mechanism ID`),
+                Budget = as.numeric(Budget),
+                Target = as.numeric(Target),
+                Result = as.numeric(Result))
+```
+## now bind them together and can reorder columns if you want (for EATAP work)
+```{r,results="Hide"}
+
+#col_order<-c ("OU (COP 2019)", "OU (Pre-COP 2019)","Country","Funding Agency","Partner Name","Mechanism Name","Mechanism ID","Data Stream","Fiscal Year","Budget","Program Area","Sub-Program Area","Service Delivery","Beneficiary","Sub-Beneficiary","Partner Org Type","Local Partner Type","int#","isindigenouspartner")
+#df<-df_fasts[, col_order]
+#df$"Program Area: Sub-Program Area-Service Level"<-paste(df$`Program Area`,": ",df$`Sub-Program Area`,"-",df$`Service Delivery`)
+#df$"Beneficiary-Sub-Beneficiary"<-paste(df$Beneficiary,"-",df$`Sub-Beneficiary`)
+
+
+df <- dplyr::bind_rows(df_fasts, df_dp,)
+```
+#Print statements (Print(df) or View(df)) can be a helfpul way to check if your data is transforming the way you want it to
+``````{r,results="Hide"}
+df <- dplyr::bind_rows(df_fasts, df_dp, data)
+```
+##write file to output folder
+```{r,results="Hide"}
+write_csv(df, "Budget.ER.MER.4.30.2020.csv")
+
+df_dp %>% distinct(indicator, disaggregate) %>% prinf
+```
