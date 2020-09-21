@@ -1,0 +1,85 @@
+---
+title: "Creating a dataset for initatives"
+author: "EA Team"
+date: "5/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(here)
+library(ICPIutilities)
+library(glamr)
+library(purrr)
+library(here)
+here("Datasets")
+```
+
+This code is a bit different from the others. The first step is to run the function, followed by importing the data, running the code, and then exporting it to your desired location. This script relies on the FASTs so you must download them first. Be sure to set your working directtor first to wherever the FASTS are stored. 
+
+
+```{r}
+Master_Initiative <- function(filepath) {
+
+  df <- readxl::read_xlsx(filepath,
+                          sheet = "3 Initiative-E",
+                          skip = 1,
+                          col_types = "text") %>%
+    dplyr::slice(-1,-2) %>%
+    dplyr::select_at(dplyr::vars(!dplyr::starts_with("Skip"))) %>%
+    dplyr::select(-TotalInitiativeAmount, -InterventionTotalAmount)
+
+  ou <- readxl::read_excel(filepath,
+                           sheet = "Mechs List-R",
+                           range = "A2") %>%
+    names()
+
+# initiative 1
+  df1 <- df %>%
+    dplyr::select(FundingAgency:InitiativeAmount1) %>%
+    dplyr::filter(!is.na(InitiativeAmount1)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 2
+  df2 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName2", "FundingType2", "FundingCategory2",
+                  "AppropriationYear2", "FundingAccount2", "InitiativeAmount2") %>%
+    dplyr::filter(!is.na(InitiativeAmount2)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  # initiative 3
+  df3 <- df %>%
+    dplyr::select(FundingAgency:Beneficiary, "InitiativeName3", "FundingType3", "FundingCategory3",
+                  "AppropriationYear3", "FundingAccount3", "InitiativeAmount3") %>%
+    dplyr::filter(!is.na(InitiativeAmount3)) %>%
+    dplyr::rename_all(~ stringr::str_remove(., "[:digit:]"))
+
+  final <- bind_rows(df1, df2, df3) %>%
+    dplyr::mutate(InitiativeAmount = as.numeric(InitiativeAmount)) %>%
+    dplyr::filter(InitiativeAmount!=0) %>%
+    dplyr::mutate(operatingunit = ou)
+
+  return(final)
+
+}
+
+```
+Run the function across the FASTs below
+```{r}
+##test
+file <-list.files("Datasets/FASTS",pattern="FAST",full.names = TRUE)
+
+df_initiative <- purrr::map_dfr(.x = file,
+                     .f = ~ Master_Initiative(.x))
+```
+
+Write your file to where you want it to be, and rename it
+```{r}
+write_csv(df_initiative, "initiativeset.dd.mm.yy.csv")
+
+distinct(test, operatingunit) %>% print(n=Inf)
+```
