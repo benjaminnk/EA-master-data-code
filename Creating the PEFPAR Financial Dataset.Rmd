@@ -1,10 +1,10 @@
 ---
 title: "Creating the PEPFAR Financial-MER Integrated Dataset"
 author: 'USAID/GH/OHA/SIEI/EA: led by Jairo Montez and Benjamin Kasdan'
-date: "September 18, 2020"
-output:
-  pdf_document: default
-  word_document: default
+date: "September 23, 2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -24,8 +24,9 @@ here("Datasets")
 Below is a guide for working with the EA branches FSD_Clean and MSD_Clean functions. You can use these functions to importat, clean, and append the Financial Structured Dataset and MER Structured Dataset to create an integrated financial and programmatic dataset. 
 
 1. Use this to read in and clean the MSD
-```{r echo=T, results='hide'} 
+```{r} 
 MSD_Clean<-function(df){
+  #Can run these separately if need be.Read_MSD is nested here
   df<-read_msd(df)
   #Use this to filter out the disaggs and drop uneeded columns
   df<-df%>%dplyr::filter(standardizeddisaggregate == "Total Numerator") %>%
@@ -69,6 +70,7 @@ MSD_Clean<-function(df){
 2. clean the FSD function
 ```{r echo=T, results='hide'} 
 FSD_Clean<-function(df){
+  #nested read_msd. Can be removed and run separately
   df<-read_msd(df)
   # Drop columns you don't need and rename
   df<-df %>%dplyr::select( - c('prime_partner_duns',	'award_number',	
@@ -96,13 +98,23 @@ FSD_Clean<-function(df){
                   "Prime Partner Type"=prime_partner_org_type,
                   "Is Indigenous Prime Partner"=is_indigenous_prime_partner)%>%
     dplyr::mutate(`Data Stream`="FSD")
+    #replace NAs with 0s
     df<-df%>%
       mutate_at(vars(`COP Budget New Funding`:`Expenditure`),~replace_na(.,0))
+    #add in a quarter for the budget data, this is useful for doing quarterly analytics of budget data
+    df$Quarter<-c("Quarter 1")
+    #convert budget columns to numeric
+    df<-df%>%
+      dplyr::mutate(`Fiscal Year`= as.character(`Fiscal Year`))%>%
+      dplyr::mutate(`COP Budget New Funding`=as.numeric(`COP Budget New Funding`))%>%
+      dplyr::mutate(`COP Budget Pipeline`=as.numeric(`COP Budget Pipeline`))%>%
+      dplyr::mutate(`Total Planned Funding`=as.numeric(`Total Planned Funding`))%>%
+      dplyr::mutate(`Expenditure`=as.numeric(`Expenditure`))
   return(df)
 }
 ```
 3. Read in the MSD/FSD and clean it using our functions. Pattern is helpful to use here but be careful that you are not picking up more than one dataset
-```{r echo=T, results='hide'} 
+```{r}
 filesMSD<-list.files("Datasets",pattern="MER_Structured_Datasets_OU_IM_FY18-20_20200814_v1_1",full.names = TRUE)
 df.MSD<-purrr::map_dfr(.x=filesMSD,
                     .f=~MSD_Clean(.x))
@@ -110,12 +122,25 @@ filesFSD<-list.files("Datasets",pattern="Financial_Structured_Dataset",full.name
 df.FSD<-purrr::map_dfr(.x=filesFSD,
                        .f=~FSD_Clean(.x))
 ```
+
 4. Bind the ouput (if applicable)
 ```{r echo=T, results='hide'} 
-#df.FSDMSD<-bind_rows(df.FSD,df.MSD)%>%
+df.FSDMSD<-bind_rows(df.FSD,df.MSD)%>%
 dplyr::relocate(c(1:17,23,18:22,24:29))
 ```
+
+
 5. Write CSV
 ```{r echo=T, results='hide'} 
-#write_csv(df.FSDMSD, "Financial.MER.9.16.2020.csv")
+#write_csv(df.FSD, "Financial.csv")
+
+```
+6. Send to google drive (beta)
+```{r}
+
+ss1 <- gs4_create(
+  "Budgter.MER.FSD. 9.22.2020",
+  sheets = "chickwts")%>%
+sheet_write(df.FSDMSD, ss = ss1, sheet = "chickwts")
+
 ```
