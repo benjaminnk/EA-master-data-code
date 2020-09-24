@@ -27,9 +27,10 @@ Below is a guide for working with the EA branches FSD_Clean and MSD_Clean functi
 1. Use this to read in and clean the MSD
 ```{r} 
 MSD_Clean<-function(df){
-  #Can run these separately if need be.Read_MSD is nested here
+#Can run these separately if need be. read_MSD is nested here
   df<-read_msd(df)
-  #Use this to filter out the disaggs and drop uneeded columns
+
+#Use this to filter out the disaggs and drop uneeded columns
   df<-df%>%dplyr::filter(standardizeddisaggregate == "Total Numerator") %>%
     dplyr::select( - c('operatingunituid', 'pre_rgnlztn_hq_mech_code', 'prime_partner_duns',	'award_number',	
 'categoryoptioncomboname', 'ageasentered', 'trendsfine', 'trendssemifine',	
@@ -51,14 +52,16 @@ MSD_Clean<-function(df){
                   "Fiscal Year"="fiscal_year")%>%
     dplyr::mutate(`Data Stream`="MER")%>%
       dplyr::mutate(`Fiscal Year`= as.character(`Fiscal Year`))
-  #Turn NAs into 0s to make it easier to read
+
+#Turn NAs into 0s to make it easier to read
   df<-df%>%
     mutate_at(vars(`Quarter 1`:`Quarter 4`),~replace_na(.,0))%>% 
     mutate_at(vars(`Targets`),~replace_na(.,0))%>%
-    mutate_at(vars(`Cumulative`),~replace_na(.,0))%>%
+    mutate_at(vars(`Cumulative`),~replace_na(.,0))
     
     
-    #using pivot_long
+#using pivot_long to turn results into quarters
+df<-df%>%
     pivot_longer(
       cols = `Quarter 1`: `Quarter 4`,
       names_to="Quarter",
@@ -70,11 +73,13 @@ MSD_Clean<-function(df){
 ```
 
 2. clean the FSD function
-```{r echo=T, results='hide'} 
+```{r} 
 FSD_Clean<-function(df){
-  #nested read_msd. Can be removed and run separately
+
+#nested read_msd. Can be removed and run separately
   df<-read_msd(df)
-  # Drop columns you don't need and rename
+
+# Drop columns you don't need and rename
   df<-df %>%dplyr::select( - c('prime_partner_duns',	'award_number',	
                                        'subrecipient_duns')) %>% 
     dplyr::rename("Operating Unit"= operatingunit,
@@ -100,12 +105,15 @@ FSD_Clean<-function(df){
                   "Prime Partner Type"=prime_partner_org_type,
                   "Is Indigenous Prime Partner"=is_indigenous_prime_partner)%>%
     dplyr::mutate(`Data Stream`="FSD")
-    #replace NAs with 0s
+
+#replace NAs with 0s
     df<-df%>%
       mutate_at(vars(`COP Budget New Funding`:`Expenditure`),~replace_na(.,0))
+
     #add in a quarter for the budget data, this is useful for doing quarterly analytics of budget data
     df$Quarter<-c("Quarter 1")
-    #convert budget columns to numeric
+
+#convert budget columns to numeric
     df<-df%>%
       dplyr::mutate(`Fiscal Year`= as.character(`Fiscal Year`))%>%
       dplyr::mutate(`COP Budget New Funding`=as.numeric(`COP Budget New Funding`))%>%
@@ -117,6 +125,7 @@ FSD_Clean<-function(df){
 ```
 3. Read in the MSD/FSD and clean it using our functions. Pattern is helpful to use here but be careful that you are not picking up more than one dataset
 ```{r}
+#Here you are pointing the script to your "Datasets" folder to search for that pattern
 filesMSD<-list.files("Datasets",pattern="MER_Structured_Datasets_OU_IM_FY18-20_20200814_v1_1.txt",full.names = TRUE)
 df.MSD<-purrr::map_dfr(.x=filesMSD,
                     .f=~MSD_Clean(.x))
@@ -126,16 +135,19 @@ df.FSD<-purrr::map_dfr(.x=filesFSD,
 ```
 
 4. Bind the ouput (if applicable)
-```{r echo=T, results='hide'} 
+```{r} 
 df.FSDMSD<-bind_rows(df.FSD,df.MSD)%>%
+
 #add in OU column
   dplyr::mutate(`OU` = `Operating Unit`)%>%
-   #Add in agency category column to group agencies
+  
+#Add in agency category column to group agencies
   dplyr::mutate(`Agency Category` = `Funding Agency`)%>%
   mutate(`Agency Category` = ifelse(`Agency Category` == "USAID", "USAID",
                                     ifelse(`Agency Category` == "HHS/CDC", "CDC", "Other")))
   
-  #re-order the columns
+#re-order the columns
+df.FSDMSD<-df.FSDMSD%>%
   dplyr::relocate(`OU`,`Operating Unit`:`Fiscal Year`,`Data Stream`,`COP Budget New Funding`:`Expenditure`)
  
 ```
@@ -143,7 +155,7 @@ df.FSDMSD<-bind_rows(df.FSD,df.MSD)%>%
 
 5. Write CSV
 ```{r echo=T, results='hide'} 
-write_csv(df.FSDMSD, "EA Integrated Financial Dataset.9.24.2020.csv")
+write_csv(df.FSDMSD, "EA Integrated Financial Dataset.DD.MM.YYYY.csv")
 
 ```
 6. Send to google drive (beta). This takes a long time and isn't recommended
