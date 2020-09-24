@@ -9,29 +9,29 @@ output:
 editor_options:
   chunk_output_type: console
 ---
+**Instructions for recreating ER 'dashboard dataset' using COP20 Datapack and FAST tool for countries that aren't part of the regional programs.
+
+Step 1: Install the required packages to your computer. This includes loading the SI tools from Github (be sure to set up a Github beforehand). You should only have to do this part in the initial set up. Once doing that, skip to the next section during recurring downloads. 
 
 ```{r setup, include=TRUE}
 knitr::opts_chunk$set(echo = FALSE)
-```
-
-
-
-**Instructions for recreating ER 'dashboard dataset' using COP20 Datapack and FAST tool for countries that aren't part of the regional programs.
-
-#Step 1: Install the required packages to your computer. This includes loading the SI tools from Github (be sure to set up a Github beforehand). You should only have to do this part in the initial set up. Once doing that, skip to the next section during recurring downloads. 
-```{r,results="Hide"}
 install.packages("devtools")
 install.packages("tidyverse")
 devtools::install_github("USAID-OHA-SI/tameDP")
 devtools::install_github("USAID-OHA-SI/fastR")
-```
-##Load required programs and set your computer's Working  Director to where the files are located on your computer. In this case, I set my working directory to my SIEI COP20 folder.
-```{r,results="Hide"}
-library("tidyverse")
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(ICPIutilities)
+library(glamr)
+library(here)
 library(fastR)
 library(tameDP)
 library(purrr)
-setwd("~/Credence/on boarding/SIEI/COP20")
+here("Datasets")
+```
+
 ```
 #Identify all the FAST files(Where they are located on your computer)
 ```{r,results="Hide"}
@@ -141,7 +141,7 @@ df <- dplyr::bind_rows(df_fasts, df_dp, data)
 ```
 ##write file to output folder
 ```{r,results="Hide"}
-write_csv(df, "Budget.ER.MER.4.30.2020.csv")
+write_csv(df, "Budget.ER.MER.dd.mm.yyyy.csv")
 
 df_dp %>% distinct(indicator, disaggregate) %>% prinf
 ```
