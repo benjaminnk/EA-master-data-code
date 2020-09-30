@@ -9,6 +9,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+#Please be sure to install these if you do not have the following packages on your computer
 library(stringr)
 library(dplyr)
 library(tidyverse)
@@ -16,6 +17,8 @@ library(readxl)
 library(ICPIutilities)
 library(glamr)
 library(purrr)
+library(googlesheets4)
+library(tidylog) #used to track merges
 library(here)
 here("Datasets")
 ```
@@ -120,16 +123,18 @@ FSD_Clean<-function(df){
       dplyr::mutate(`COP Budget Pipeline`=as.numeric(`COP Budget Pipeline`))%>%
       dplyr::mutate(`Total Planned Funding`=as.numeric(`Total Planned Funding`))%>%
       dplyr::mutate(`Expenditure`=as.numeric(`Expenditure`))
+    
+
   return(df)
 }
 ```
 3. Read in the MSD/FSD and clean it using our functions. Pattern is helpful to use here but be careful that you are not picking up more than one dataset
 ```{r}
 #Here you are pointing the script to your "Datasets" folder to search for that pattern
-filesMSD<-list.files("Datasets",pattern="MER_Structured_Datasets_OU_IM_FY18-20_20200814_v1_1.txt",full.names = TRUE)
+filesMSD<-list.files("Datasets",pattern="MER_Structured_Datasets_OU_IM_FY18-21_20200918_v2_1",full.names = TRUE)
 df.MSD<-purrr::map_dfr(.x=filesMSD,
                     .f=~MSD_Clean(.x))
-filesFSD<-list.files("Datasets",pattern="Financial_Structured_Dataset",full.names = TRUE)
+filesFSD<-list.files("Datasets",pattern="Financial_Structured_Dataset_FY18-21_20200918_v2_1",full.names = TRUE)
 df.FSD<-purrr::map_dfr(.x=filesFSD,
                        .f=~FSD_Clean(.x))
 ```
@@ -144,18 +149,87 @@ df.FSDMSD<-bind_rows(df.FSD,df.MSD)%>%
 #Add in agency category column to group agencies
   dplyr::mutate(`Agency Category` = `Funding Agency`)%>%
   mutate(`Agency Category` = ifelse(`Agency Category` == "USAID", "USAID",
-                                    ifelse(`Agency Category` == "HHS/CDC", "CDC", "Other")))
+                                    ifelse(`Agency Category` == "HHS/CDC", "CDC",
+                                    ifelse(`Agency Category` =="Dedup", "Dedup","Other"))))
   
 #re-order the columns
 df.FSDMSD<-df.FSDMSD%>%
   dplyr::relocate(`OU`,`Operating Unit`:`Fiscal Year`,`Data Stream`,`COP Budget New Funding`:`Expenditure`)
  
 ```
+Read in the historical base dataset for FY15-17. It is kept in the EA team google folder
+``` {r}
+#BudH<-read_sheet("https://docs.google.com/spreadsheets/d/1Y_u4smwYUgSKSirbihRZ8Rh8GE1yA31-NlSg5GnzHsU/edit#gid=1536348418")
 
+BudH<-read_xlsx(here("Datasets","Historic Budget ER MER fy15-17.xlsx"))
+ BudH<-BudH%>%
+      dplyr::mutate(`Fiscal Year`= as.character(`Fiscal Year`))%>%
+      dplyr::mutate(`Mechanism ID`=as.character(`Mechanism ID`))%>%
+      dplyr::mutate(`Cost Category`=as.character(`Cost Category`))%>%
+      dplyr::mutate(`Sub Cost Category`=as.character(`Sub Cost Category`))%>%
+      dplyr::mutate(`Total Planned Funding`=as.numeric(`Total Planned Funding`))%>%
+      dplyr::mutate(`Expenditure`=as.numeric(`Expenditure`))%>%
+      dplyr::mutate(`Targets`=as.double(`Targets`))%>%
+      dplyr::mutate(`Results`=as.double(`Results`))
+ BudH<-BudH%>%
+   mutate_at(vars(`Expenditure`:`Total Planned Funding`, `Targets`:`Results`),~replace_na(.,0))
+ 
+ #drop the oldpartner types column as this will lead to duplicates if you wish to update it
+ BudH<-BudH%>%
+   dplyr::select(-c(`Partner Type-USAID Internal`, `InitiativeName`:`Funding Account`))
+   
+
+df.EA<-bind_rows(df.FSDMSD,BudH)
+df.EA<-df.EA%>%
+  dplyr::relocate(`OU`,`Operating Unit`:`Fiscal Year`,`Data Stream`,`COP Budget New Funding`:`Expenditure`)
+
+# Update Site Level
+df.EA<-df.EA%>%
+  dplyr::mutate(`Site Level` = `Program Area`)
+  df.EA<-df.EA%>%
+    dplyr::mutate(`Site Level` = ifelse(`Site Level` == "C&T" , "Site",
+                                  ifelse(`Site Level` == "PREV" , "Site",
+                                  ifelse(`Site Level` == "HTS" , "Site",
+                                  ifelse(`Site Level` == "SE" , "Site",
+                                    ifelse(`Site Level` == "ASP", "Above Site",
+                                    ifelse(`Site Level` == "AP", "AP",
+                                    ifelse(`Site Level` =="PM", "PM","N/A"))))))))
+#df.EA<-df.EA%>%
+  #dplyr::mutate(`Interaction Type1`=`Interaction Type`)
+#df.EA<-df.EA%>%
+  #dplyr::mutate(`Interaction Type1`= ifelse(`Program Area` == "PM", "PM",.))
+```
+Update the USAID Internal partners list. I downloaded it from the LP team. The end goal will be to have a better integration between LP and the "is indigenous" column. This is a temporary solution hopefully
+```{r}
+Partner_Types<-read_xlsx(here("Datasets","Partner types 9.24.2020.xlsx"))
+Partner_Types<-Partner_Types%>%
+  dplyr::mutate(`Mechanism ID`= as.character(`Mechanism ID`))
+df.EA<-left_join(df.EA,Partner_Types,by ="Mechanism ID", name="Partner Types-USAID Internal")
+
+  
+```
+
+Fun extra piece if you'd like to triangulate the data with outlays
+```{r}
+filesOutlay<-list.files("Datasets",pattern="outlay meeting",full.names = TRUE)
+outlay<-readxl::read_xlsx(filesOutlay)
+outlay<-outlay%>%
+  dplyr::mutate_at(vars(`Outlay`:`Planning Level`),~replace_na(.,0))%>%
+  dplyr::mutate(`Outlay` = as.integer(`Outlay`))%>%
+  dplyr::mutate(`Planning Level` = as.integer(`Planning Level`))%>%
+  dplyr::mutate(`Fiscal Year` = as.character(`Fiscal Year`))%>%
+  dplyr::rename(`Prime Partner Name` = "Partner Name")
+
+EA.Integrated.Budget.MER.Outlay<-bind_rows(outlay,df.EA)%>%
+  left_join(EA.Integrated.Budget.MER.Outlay,Partner_Types,by="Mechanism ID")%>%
+   dplyr::filter(`Funding Agency`=="USAID")%>%
+  dplyr::filter(`Fiscal Year`=="2020")
+
+```
 
 5. Write CSV
 ```{r echo=T, results='hide'} 
-write_csv(df.FSDMSD, "EA Integrated Financial Dataset.DD.MM.YYYY.csv")
+write_csv(df.EA, "EA Integrated Financial Dataset.10.30.2020.csv")
 
 ```
 6. Send to google drive (beta). This takes a long time and isn't recommended
@@ -167,6 +241,7 @@ ss1 <- gs4_create(
 sheet_write(df.FSDMSD, ss = ss1, sheet = "chickwts")
 
 ```
+
 
 
   
