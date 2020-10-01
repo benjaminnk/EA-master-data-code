@@ -1,7 +1,7 @@
 ---
 title: "EA Integrated Financial Dataset"
 author: "EA team"
-date: "September 24, 2020"
+date: "October 1, 2020"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -113,8 +113,10 @@ FSD_Clean<-function(df){
     df<-df%>%
       mutate_at(vars(`COP Budget New Funding`:`Expenditure`),~replace_na(.,0))
 
-    #add in a quarter for the budget data, this is useful for doing quarterly analytics of budget data
+#add in a quarter for the budget data, this is useful for doing quarterly analytics of budget data triangulated to MER and outlays
     df$Quarter<-c("Quarter 1")
+    df<-df%>%
+  dplyr::mutate(`Quarter`= if_else(`Expenditure`>0,"Quarter 4","Quarter 1"))
 
 #convert budget columns to numeric
     df<-df%>%
@@ -123,7 +125,6 @@ FSD_Clean<-function(df){
       dplyr::mutate(`COP Budget Pipeline`=as.numeric(`COP Budget Pipeline`))%>%
       dplyr::mutate(`Total Planned Funding`=as.numeric(`Total Planned Funding`))%>%
       dplyr::mutate(`Expenditure`=as.numeric(`Expenditure`))
-    
 
   return(df)
 }
@@ -157,12 +158,12 @@ df.FSDMSD<-df.FSDMSD%>%
   dplyr::relocate(`OU`,`Operating Unit`:`Fiscal Year`,`Data Stream`,`COP Budget New Funding`:`Expenditure`)
  
 ```
-Read in the historical base dataset for FY15-17. It is kept in the EA team google folder
+Read in the historical base dataset for FY15-17. It is kept in the EA team google folder. If youre computer is fast enough, feel free to use the direct google sheets pull. Otherwise please download it and store on your local drive. Below is the function that you must run first before importing it
 ``` {r}
 #BudH<-read_sheet("https://docs.google.com/spreadsheets/d/1Y_u4smwYUgSKSirbihRZ8Rh8GE1yA31-NlSg5GnzHsU/edit#gid=1536348418")
-
-BudH<-read_xlsx(here("Datasets","Historic Budget ER MER fy15-17.xlsx"))
- BudH<-BudH%>%
+Historic_Budget_Clean<-function(df){
+df<-read_xlsx(df)
+ df<-df%>%
       dplyr::mutate(`Fiscal Year`= as.character(`Fiscal Year`))%>%
       dplyr::mutate(`Mechanism ID`=as.character(`Mechanism ID`))%>%
       dplyr::mutate(`Cost Category`=as.character(`Cost Category`))%>%
@@ -171,13 +172,28 @@ BudH<-read_xlsx(here("Datasets","Historic Budget ER MER fy15-17.xlsx"))
       dplyr::mutate(`Expenditure`=as.numeric(`Expenditure`))%>%
       dplyr::mutate(`Targets`=as.double(`Targets`))%>%
       dplyr::mutate(`Results`=as.double(`Results`))
- BudH<-BudH%>%
+ df<df%>%
    mutate_at(vars(`Expenditure`:`Total Planned Funding`, `Targets`:`Results`),~replace_na(.,0))
  
- #drop the oldpartner types column as this will lead to duplicates if you wish to update it
- BudH<-BudH%>%
+ # add quarters to the old budget and MER data for quarterly comparison. Since we only have yearly results, I've assigned all targets/results to Q4. ER goes to Q4 while budget goes to Q1.
+df$df<-c("Quarter 1")
+df<-df%>%
+  dplyr::mutate(`Quarter`= if_else(`Expenditure`>0,"Quarter 4","Quarter 1"))%>%
+  dplyr::mutate(`Quarter`= if_else(`Targets`>0, "Quarter 4", "Quarter 1"))%>%
+  dplyr::mutate(`Quarter` = if_else(`Total Planned Funding`>0, "Quarter 1", "Quarter 4"))
+  
+ 
+ #drop the oldpartner types column as this will lead to duplicates if you wish to update it with the new LP list
+ df<-df%>%
    dplyr::select(-c(`Partner Type-USAID Internal`, `InitiativeName`:`Funding Account`))
    
+return (df)
+}
+```
+Now run the function to importthe dataset
+```{r}
+BudH<-Historic_Budget_Clean(here("Datasets","Historic Budget ER MER fy15-17.xlsx"))
+#Bind the historic budget dataset with our combined FSD/MSD
 
 df.EA<-bind_rows(df.FSDMSD,BudH)
 df.EA<-df.EA%>%
@@ -194,12 +210,8 @@ df.EA<-df.EA%>%
                                     ifelse(`Site Level` == "ASP", "Above Site",
                                     ifelse(`Site Level` == "AP", "AP",
                                     ifelse(`Site Level` =="PM", "PM","N/A"))))))))
-#df.EA<-df.EA%>%
-  #dplyr::mutate(`Interaction Type1`=`Interaction Type`)
-#df.EA<-df.EA%>%
-  #dplyr::mutate(`Interaction Type1`= ifelse(`Program Area` == "PM", "PM",.))
 ```
-Update the USAID Internal partners list. I downloaded it from the LP team. The end goal will be to have a better integration between LP and the "is indigenous" column. This is a temporary solution hopefully
+Update the USAID Internal partners list. I downloaded it from the LP team. The end goal will be to have a better integration between LP and the "is indigenous" column. This is a temporary solution hopefully. In any case, please access the list here:https://docs.google.com/spreadsheets/d/1MQviknJkJDttGdNEJeNaYPKmHCw6BqPuJ0C5cslV5IE/edit#gid=2111082418. You might have to clean it in Excel to remove duplicates that have different classifcations (named in separate years). Below I named my dataset the day that I updated it
 ```{r}
 Partner_Types<-read_xlsx(here("Datasets","Partner types 9.24.2020.xlsx"))
 Partner_Types<-Partner_Types%>%
@@ -209,7 +221,7 @@ df.EA<-left_join(df.EA,Partner_Types,by ="Mechanism ID", name="Partner Types-USA
   
 ```
 
-Fun extra piece if you'd like to triangulate the data with outlays
+Fun extra piece if you'd like to triangulate the data with outlays and just looking at 2020
 ```{r}
 filesOutlay<-list.files("Datasets",pattern="outlay meeting",full.names = TRUE)
 outlay<-readxl::read_xlsx(filesOutlay)
@@ -229,7 +241,7 @@ EA.Integrated.Budget.MER.Outlay<-bind_rows(outlay,df.EA)%>%
 
 5. Write CSV
 ```{r echo=T, results='hide'} 
-write_csv(df.EA, "EA Integrated Financial Dataset.10.30.2020.csv")
+write_csv(df.EA, "FY20.Q3.Budget.ER.MER Dataset.csv")
 
 ```
 6. Send to google drive (beta). This takes a long time and isn't recommended
