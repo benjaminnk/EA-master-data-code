@@ -1,0 +1,55 @@
+---
+title: "Outlay_Clean"
+author: "EA team"
+date: "October 20, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(ICPIutilities)
+library(glamr)
+library(purrr)
+library(here)
+library(googlesheets4)
+```
+
+
+
+```{r}
+# Cleaning outlays
+
+Outlay_clean<-function(df){
+df<-readxl::read_xlsx(df)
+df<-df%>%
+  dplyr::mutate_at(vars(`Outlay`:`Planning Level`),~replace_na(.,0))%>%
+  dplyr::mutate(`Outlay` = as.numeric(`Outlay`))%>%
+  dplyr::mutate(`Planning Level` = as.numeric(`Planning Level`))%>%
+  dplyr::mutate(`Fiscal Year` = as.character(`Fiscal Year`))%>%
+  dplyr::rename(`Prime Partner Name` = "Partner Name")%>%
+  dplyr::mutate(`Data Stream`="Outlay")
+df<-df%>%
+  dplyr::select(-'Planning Level')
+df<-df%>%
+  pivot_wider(names_from = `Quarter`, values_from = `Outlay`)  
+df<-df%>%
+  dplyr::mutate_at(vars(`Quarter 2`:`Quarter 3`), funs(replace(., duplicated (.), 0)))
+df<-df%>%
+  pivot_longer(
+    cols = `Quarter 2` : `Quarter 3`,
+    names_to="Quarter",
+    values_to="Outlays"
+  )
+return(df)
+}
+```
+#Run the outlay function
+```{r}
+filesOutlay<-list.files("Datasets",pattern="outlay meeting",full.names = TRUE)
+Outlays<-Outlay_clean(df)
+
+```
